@@ -23,17 +23,23 @@ T = TypeVar('T', bound=BaseModel)
 
 
 def _strip_thinking_blocks(content: str) -> str:
-    """Strip <think>...</think> thinking blocks from model response.
+    """Strip thinking blocks from model response.
     
     Some providers (e.g., MiniMax) return thinking blocks that break JSON parsing.
     This removes them before parsing.
     """
     if not content:
         return content
-    # Remove <think>...</think> blocks
-    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+    
+    # Remove <think>...</think> blocks (including nested)
+    content = re.sub(r'<think>\s*[\s\S]*?</think>', '', content, flags=re.MULTILINE)
+    # Remove <think> without closing tag
+    content = re.sub(r'<think>.*', '', content, flags=re.MULTILINE)
     # Remove leftover opening/closing tags
     content = re.sub(r'</?think>', '', content)
+    content = re.sub(r'<[/]?in[^>]*>', '', content)  # Handle truncated tags like <in...>
+    content = re.sub(r'<[/]?thinking[^>]*>', '', content)
+    
     return content.strip()
 
 
