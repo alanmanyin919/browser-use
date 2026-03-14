@@ -1,6 +1,7 @@
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, overload
+import re
 
 import httpx
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
@@ -19,6 +20,21 @@ from browser_use.llm.schema import SchemaOptimizer
 from browser_use.llm.views import ChatInvokeCompletion, ChatInvokeUsage
 
 T = TypeVar('T', bound=BaseModel)
+
+
+def _strip_thinking_blocks(content: str) -> str:
+    """Strip <think>...</think> thinking blocks from model response.
+    
+    Some providers (e.g., MiniMax) return thinking blocks that break JSON parsing.
+    This removes them before parsing.
+    """
+    if not content:
+        return content
+    # Remove <think>...</think> blocks
+    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+    # Remove leftover opening/closing tags
+    content = re.sub(r'</?think>', '', content)
+    return content.strip()
 
 
 @dataclass
@@ -215,8 +231,10 @@ class ChatOpenAI(BaseChatModel):
 					)
 
 				usage = self._get_usage(response)
+				# Strip thinking blocks from string responses too
+				clean_content = _strip_thinking_blocks(choice.message.content or '')
 				return ChatInvokeCompletion(
-					completion=choice.message.content or '',
+					completion=clean_content,
 					usage=usage,
 					stop_reason=choice.finish_reason,
 				)
@@ -281,7 +299,9 @@ class ChatOpenAI(BaseChatModel):
 
 				usage = self._get_usage(response)
 
-				parsed = output_format.model_validate_json(choice.message.content)
+				# Strip thinking blocks before JSON parsing (for MiniMax compatibility)
+				clean_content = _strip_thinking_blocks(choice.message.content)
+				parsed = output_format.model_validate_json(clean_content)
 
 				return ChatInvokeCompletion(
 					completion=parsed,
